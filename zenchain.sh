@@ -4,7 +4,6 @@
 GREEN="\e[32m"
 YELLOW="\e[33m"
 RED="\e[31m"
-BLUE="\e[34m"
 CYAN="\e[36m"
 BOLD="\e[1m"
 RESET="\e[0m"
@@ -41,9 +40,6 @@ setup() {
     echo -e "${BOLD}${GREEN}欢迎使用 ZenChain 节点设置脚本${RESET}"
     print_separator
 
-    curl -s https://raw.githubusercontent.com/ziqing888/logo.sh/refs/heads/main/logo.sh | bash
-    sleep 2
-
     print_step "更新并升级系统软件包"
     sudo apt update -y && sudo apt upgrade -y
     print_成功 "系统更新完成"
@@ -59,22 +55,13 @@ setup() {
 # 安装依赖
 install_requirements() {
     print_step "检查并安装 Docker 和 jq"
-
-    # Docker
     if ! command -v docker &> /dev/null; then
-        echo -e "${信息} 安装 Docker 中，请稍等..."
-        sudo apt-get remove -y docker.io docker-doc docker-compose podman-docker containerd runc
-        sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-        sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-        sudo apt update -y && sudo apt install -y docker-ce
-        sudo systemctl enable docker --now
+        sudo apt install -y docker-ce
         print_成功 "Docker 安装成功"
     else
         print_成功 "Docker 已安装"
     fi
 
-    # jq
     if ! command -v jq &> /dev/null; then
         sudo apt install -y jq
         print_成功 "jq 安装成功"
@@ -86,37 +73,32 @@ install_requirements() {
 # 配置并启动节点
 process() {
     print_step "配置节点文件并启动临时容器"
-
-    # 创建数据目录
     mkdir -p "chain-data" && chmod 777 "chain-data"
 
-    # 输入验证器名称
     read -p "请输入您的验证器名称: " VALIDATORNAME
     echo "YOURVALIDATORNAME=$VALIDATORNAME" > .env
     print_成功 ".env 文件已创建，验证器名称: $VALIDATORNAME"
 
-    # 生成 docker-compose-pre.yaml 文件
     cat <<EOF > docker-compose-pre.yaml
-version: '3'
-services:
-  zenchain:
-    image: ghcr.io/zenchain-protocol/zenchain-testnet:latest
-    container_name: zenchain
-    ports:
-      - "9944:9944"
-    volumes:
-      - ./chain-data:/chain-data
-    command: >
-      ./usr/bin/zenchain-node
-      --base-path=/chain-data
-      --rpc-cors=all
-      --rpc-methods=unsafe
-      --unsafe-rpc-external
-      --name=$VALIDATORNAME
+    version: '3'
+    services:
+      zenchain:
+        image: ghcr.io/zenchain-protocol/zenchain-testnet:latest
+        container_name: zenchain
+        ports:
+          - "9944:9944"
+        volumes:
+          - ./chain-data:/chain-data
+        command: >
+          ./usr/bin/zenchain-node
+          --base-path=/chain-data
+          --rpc-cors=all
+          --rpc-methods=unsafe
+          --unsafe-rpc-external
+          --name=$VALIDATORNAME
 EOF
     print_成功 "docker-compose-pre.yaml 文件已生成"
 
-    # 启动临时节点
     docker-compose -f docker-compose-pre.yaml up -d
     print_step "等待临时 ZenChain 节点启动..."
     while ! docker ps | grep -q zenchain; do
@@ -125,7 +107,15 @@ EOF
     done
     print_成功 "临时节点已启动"
 
-    # 发送 RPC 请求
+    print_step "等待 'Prometheus exporter started' 日志信息"
+    while true; do
+        if docker logs zenchain 2>&1 | grep -q "Prometheus exporter started"; then
+            print_成功 "'Prometheus exporter started' 日志信息已出现"
+            break
+        fi
+        sleep 2
+    done
+
     print_step "发送 RPC 请求以获取会话密钥"
     RESPONSE=$(curl -s -H "Content-Type: application/json" -d '{"id":1, "jsonrpc":"2.0", "method": "author_rotateKeys", "params":[]}' http://localhost:9944)
     if [ $? -ne 0 ]; then
@@ -140,25 +130,24 @@ EOF
     echo -e "📨 地址: 0x0000000000000000000000000000000000000802"
     echo -e "🔑 输入数据: 0xf1ec919c...${SESSION_KEY:2}\n"
 
-    # 等待用户操作
     read -p "完成交易后按 Enter 继续..." _
+
     print_step "停止临时节点并清理容器"
     docker stop zenchain && docker rm zenchain
     print_成功 "临时节点已停止"
 
-    # 创建最终 docker-compose.yaml
     cat <<EOF > docker-compose.yaml
-version: '3'
-services:
-  zenchain:
-    image: ghcr.io/zenchain-protocol/zenchain-testnet:latest
-    container_name: zenchain
-    ports:
-      - "9944:9944"
-    volumes:
-      - ./chain-data:/chain-data
-    command: ./usr/bin/zenchain-node --base-path=/chain-data --validator --name=$VALIDATORNAME
-    restart: always
+    version: '3'
+    services:
+      zenchain:
+        image: ghcr.io/zenchain-protocol/zenchain-testnet:latest
+        container_name: zenchain
+        ports:
+          - "9944:9944"
+        volumes:
+          - ./chain-data:/chain-data
+        command: ./usr/bin/zenchain-node --base-path=/chain-data --validator --name=$VALIDATORNAME
+        restart: always
 EOF
 
     docker-compose -f docker-compose.yaml up -d
