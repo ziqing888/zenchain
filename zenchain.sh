@@ -38,7 +38,7 @@ print_error() {
 # 设置环境
 setup() {
     print_header
-    curl -s https://raw.githubusercontent.com/Widiskel/Widiskel/refs/heads/main/show_logo.sh | bash
+  curl -s https://raw.githubusercontent.com/ziqing888/logo.sh/refs/heads/main/logo.sh | bash
     sleep 3
 
     print_step "更新并升级系统软件包"
