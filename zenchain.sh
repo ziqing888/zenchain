@@ -1,73 +1,69 @@
 #!/bin/bash
 
-# 设置颜色和样式
+# 定义颜色和格式
+BOLD="\e[1m"
 GREEN="\e[32m"
 YELLOW="\e[33m"
 RED="\e[31m"
-BLUE="\e[34m"
-CYAN="\e[36m"
-BOLD="\e[1m"
 RESET="\e[0m"
-INFO="${CYAN}[INFO]${RESET}"
-SUCCESS="${GREEN}[SUCCESS]${RESET}"
-WARNING="${YELLOW}[WARNING]${RESET}"
-ERROR="${RED}[ERROR]${RESET}"
+CYAN="\e[36m"
 
-# 节点名称
 NODENAME="zenchain"
 
-# 显示信息函数
+# 打印脚本头部信息
 print_header() {
     echo -e "\n${BOLD}${GREEN}============================================${RESET}"
     echo -e "${BOLD}${GREEN}       ZenChain 节点设置脚本 ${RESET}"
     echo -e "${BOLD}${GREEN}============================================${RESET}\n"
 }
 
-print_step() {
-    echo -e "${BOLD}${YELLOW}正在执行步骤: $1...${RESET}"
+# 记录并显示消息
+log_info() {
+    echo -e "${CYAN}[INFO] $1${RESET}"
 }
 
-print_success() {
-    echo -e "${SUCCESS}$1${RESET}"
+log_success() {
+    echo -e "${GREEN}[SUCCESS] $1${RESET}"
 }
 
-print_error() {
-    echo -e "${ERROR}$1${RESET}"
+log_warning() {
+    echo -e "${YELLOW}[WARNING] $1${RESET}"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR] $1${RESET}"
 }
 
 # 设置环境
 setup() {
-    print_header
-    curl -s https://raw.githubusercontent.com/ziqing888/logo.sh/refs/heads/main/logo.sh | bash
-    sleep 3
+    print_header  # 输出脚本标题
+    sleep 1
 
-    print_step "更新并升级系统软件包"
+    log_info "正在更新和升级系统软件包..."
     sudo apt update -y && sudo apt upgrade -y
 
-    # 创建节点文件夹
     cd $HOME
     if [ -d "node" ]; then
-        print_success "'node' 目录已存在。"
+        log_info "'node' 目录已存在。"
     else
         mkdir node
-        print_success "已创建 'node' 目录。"
+        log_success "创建了 'node' 目录。"
     fi
     cd node
 
     if [ -d "$NODENAME" ]; then
-        print_success "'$NODENAME' 目录已存在。"
+        log_info "'$NODENAME' 目录已存在。"
     else
         mkdir $NODENAME
-        print_success "已创建 '$NODENAME' 目录。"
+        log_success "创建了 '$NODENAME' 目录。"
     fi
     cd $NODENAME
 }
 
-# 安装依赖
+# 安装必要的软件
 installRequirements(){
-    # 安装 Docker
     if ! command -v docker &> /dev/null; then
-        print_step "安装 Docker"
+        log_info "正在安装 Docker..."
         for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do
             sudo apt-get remove -y $pkg
         done
@@ -80,32 +76,31 @@ installRequirements(){
         sudo systemctl start docker
         sudo systemctl enable docker
 
-        print_success "Docker 安装成功。"
+        log_success "Docker 安装成功。"
     else
-        print_success "Docker 已安装。"
+        log_info "Docker 已安装。"
     fi
 
-    # 安装 jq
     if ! command -v jq &> /dev/null; then
-        print_step "安装 jq"
+        log_info "正在安装 jq..."
         sudo apt install -y jq
+        log_success "jq 安装成功。"
+    else
+        log_info "jq 已安装。"
     fi
 }
 
-# 配置并启动节点
+# 处理节点相关操作
 process(){
-    # 创建链数据目录
     mkdir -p "chain-data"
     chmod -R 777 "chain-data"
-    print_success "'chain-data' 目录已创建。"
+    log_success "创建了 'chain-data' 目录。"
 
-    # 获取用户输入
-    read -p "请输入您的验证器名称: " VALIDATORNAME
+    read -p "请输入您的验证人名称： " VALIDATORNAME
     echo "YOURVALIDATORNAME=$VALIDATORNAME" > .env
-    print_success ".env 文件已创建，验证器名称: $VALIDATORNAME"
-
-    # 创建 docker-compose-pre.yaml 文件
-    print_step "创建 docker-compose-pre.yaml 文件"
+    log_success ".env 文件已创建，包含验证人名称：$VALIDATORNAME"
+    
+    log_info "正在创建 docker-compose-pre.yaml 文件..."
 cat <<EOF > docker-compose-pre.yaml
 version: '3'
 services:
@@ -127,65 +122,62 @@ services:
       --chain=zenchain_testnet
 EOF
 
-    print_success "docker-compose-pre.yaml 文件已创建。"
+    log_success "docker-compose-pre.yaml 文件已创建，包含验证人名称：$VALIDATORNAME"
 
-    # 启动 ZenChain 节点
-    print_step "启动 ZenChain 节点，使用 PRE Docker Compose 配置"
+    log_info "使用 PRE Docker Compose 启动 ZenChain 节点..."
     docker-compose -f docker-compose-pre.yaml up -d
-    print_step "等待 ZenChain 节点容器启动..."
+    log_info "正在等待 ZenChain 节点容器启动..."
     while ! docker ps | grep -q zenchain; do
         sleep 3
-        echo -e "${INFO}等待 ZenChain 容器启动..."
+        log_info "等待 ZenChain 容器启动..."
     done
 
-    print_success "ZenChain 节点容器已启动！"
-    print_step "等待日志中出现 'Prometheus exporter started' 信息..."
+    log_success "ZenChain 节点容器已启动！"
+    log_info "正在等待日志中显示 'Prometheus exporter started'..."
     while true; do
         if docker logs zenchain 2>&1 | grep -q "Prometheus exporter started"; then
-            print_success "'Prometheus exporter started' 信息已在日志中找到。"
+            log_success "'Prometheus exporter started' 信息已在日志中找到。"
             break
         fi
         sleep 2
     done
 
-    # 发送 RPC 请求
-    print_step "发送 RPC 请求以旋转密钥并获取会话密钥"
+    log_info "发送 RPC 请求以轮换密钥并获取会话密钥..."
     RESPONSE=$(curl -s -H "Content-Type: application/json" -d '{"id":1, "jsonrpc":"2.0", "method": "author_rotateKeys", "params":[]}' http://localhost:9944)
 
     if [ $? -ne 0 ]; then
-        print_error "Curl 请求失败，退出。"
+        log_error "Curl 请求失败。退出脚本。"
         exit 1
     fi
 
-    # 提取会话密钥
+    # 从响应中提取会话密钥（去掉 '0x' 前缀）
     SESSION_KEY=$(echo $RESPONSE | jq -r '.result | select(. != null)')
-    print_success "会话密钥 : $SESSION_KEY"
+    log_success "会话密钥：$SESSION_KEY"
 
     if [[ $SESSION_KEY =~ ^0x ]]; then
         SESSION_KEY=${SESSION_KEY:2}
     fi
 
-    print_success "会话密钥（无 '0x' 前缀）: $SESSION_KEY"
+    log_success "去除 '0x' 前缀后的会话密钥：$SESSION_KEY"
 
-    echo -e "\n为了继续，请将0个Token发送到Zenchain网络上的以下地址，并使用以下详细信息："
+    log_info "继续下一步，请按照以下信息设置您的以太坊账户密钥，并通过发送 0 Tokens 到 Zenchain 网络进行验证："
     echo -e "\n发送到：'0x0000000000000000000000000000000000000802'"
     echo -e "\n输入数据：0xf1ec919c00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000060$SESSION_KEY"
     echo -e "\n"
-
     while true; do
-        read -p "按 Enter 继续: " user_input
+        read -p "按 Enter 键继续： " user_input
         if [[ -z "$user_input" ]]; then
-            print_success "正在继续下一步..."
-            print_step "停止 ZenChain 容器"
+            log_info "正在继续下一步..."
+            log_info "停止 ZenChain 容器..."
             docker stop zenchain
-            print_step "删除 ZenChain 容器"
+            log_info "移除 ZenChain 容器..."
             docker rm zenchain
             break
         fi
     done
 
-    # 创建并启动最终的docker-compose.yaml文件
-    print_step "创建 docker-compose.yaml 文件"
+    log_info "正在创建 docker-compose.yaml 文件..."
+
 cat <<EOF > docker-compose.yaml
 version: '3'
 
@@ -206,29 +198,32 @@ services:
     restart: always
 EOF
 
-    print_success "docker-compose.yaml 文件已创建。"
-    print_step "启动 ZenChain 节点，使用 Docker Compose 配置"
+    log_success "docker-compose.yaml 文件已创建，包含您的验证人名称：$VALIDATORNAME"
+    log_info "使用 Docker Compose 启动 ZenChain 节点..."
     docker-compose -f docker-compose.yaml up -d
-    print_step "等待 ZenChain 节点容器启动..."
+    log_info "正在等待 ZenChain 节点容器启动..."
     while ! docker ps | grep -q zenchain; do
         sleep 3
-        echo -e "${INFO}等待 ZenChain 容器启动..."
+        log_info "等待 ZenChain 容器启动..."
     done
 
-    print_success "ZenChain 节点容器已启动！"
+    log_success "ZenChain 节点容器已启动！"
 }
 
+# 完成安装
 finish() {
-    NODEPATH=$(pwd)
-
-    print_success "节点设置完成！"
-    echo -e "您的节点目录位于 $NODEPATH"
-    print_success "查看节点日志：'docker logs -f zenchain'"
-    echo -e "现在，访问验证器仪表板： https://node.zenchain.io/#/staking"
-    echo -e "点击 'Stake' > 点击 'To Your Account' > 点击 'Become a Validator' > 输入您希望质押的数量 > 点击 'Start Staking'"
-    print_success "完成，开始质押吧！LFG！"
+    NODEPATH=$(pwd) 
+    
+    log_success "安装完成"
+    log_info "您的节点路径在 $NODEPATH"
+    echo ""
+    log_info "使用以下命令查看节点日志： 'docker logs -f zenchain'"
+    log_info "现在，前往验证人仪表板： https://node.zenchain.io/#/staking"
+    log_info "点击 'Stake' > 'Click To Your Account' > 'Click Become a Validator' > 输入您希望质押的金额 > 点击 'Start Staking'"
+    log_success "完成！加油！"
 }
 
+# 执行脚本步骤
 setup
 installRequirements
 process
